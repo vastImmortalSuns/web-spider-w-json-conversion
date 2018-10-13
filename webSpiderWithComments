@@ -1,0 +1,139 @@
+import requests
+import json
+from bs4 import BeautifulSoup
+
+if __name__ == '__main__':
+    main()
+
+def main():
+    page_url = (
+    "http://ca.healthinspections.us/napa/search.cfm?start=1&1=1&sd=01/01/1970&ed=03/01/2017&kw1=&kw2=&kw3="
+    "&rel1=N.permitName&rel2=N.permitName&rel3=N.permitName&zc=&dtRng=YES&pre=similar")
+    
+    # This URL leads to a sheet of health inspection data. The data that will be gathered can be seen in the uppermost
+    # portion of the document.
+    
+    parse(page_url)
+
+def parse(url):		# Parse is the main method that will scan through the URL's data and convert specific elements of that data to JSON Data.
+			            # Parse is mainly composed of two for loops that will gather the specific pieces of HTML data.  
+  jsonDic = {}	
+  jsonIncrem = 0
+  firstIncrem = 0
+  secondIncrem = 0
+
+  sourceCode = requests.get(url)	# Obtains the website's code, converts it 
+  plainText = sourceCode.text		# to plaintext and creates a BS object.
+  soup = BeautifulSoup(plainText)
+  
+  for link in soup.findAll('span', {'class':'blackline'}):	# This first for loop finds data associated with the 'blackline' class in span tags and stroes it in 'information'.
+		firstIncrem += 1				                                # I used an incrementor (firstIncrem) to mark when to begin searches for the requested data types. This is because
+		information = link.string			                           # only certain iterations through the loop would return a requested piece of data (street address, city, state, etc).
+	
+	if firstIncrem == 1: # Obtains the name of the facility. 	# To save space and increase readability, I created a method called firstGetter (instantiated at line 95) 
+      facilityName = firstGetter(information, firstIncrem)  # to gather only the requested pieces of data at the necessary points in the for loop's iterations.
+      jsonDic[jsonIncrem] = (facilityName)
+    
+	if firstIncrem == 3: # Obtains the inspection date.
+      jsonIncrem += 1						                            # Once firstGetter returns its dictionary value (in this case 'inspecDate'),  
+      inspecDate = firstGetter(information, firstIncrem)	  # it is placed in a dictionary called 'jsonDic' as an element determined by jsonIncrem.
+      jsonDic[jsonIncrem] = (inspecDate)
+    
+    if firstIncrem == 5:	 # The fifth case is the most complex as it needs to store four pieces of data 
+      streetDic = {}			 # (street address, city, state and zip code) in the 'jsonDict' dictionary.
+      cityDic = {}
+      stateDic = {}
+      zipCodeDic = {}			 # This is done by creating four empty dictionaries..
+
+      jsonIncrem += 1			 # ..Increasing the incrementor by 1..
+      locationContainer = firstGetter(information, firstIncrem) 	# ..Storing the returned container's data in another container...
+
+      streetAddress = locationContainer[0]		# ..Creating new variables that correspond to the pieces of data inside locationContainer..
+      city = locationContainer[1]
+      state = locationContainer[2]
+      zipCode = locationContainer[3]
+
+      streetDic["Street Address"] = streetAddress	  # ..And repeating the same algorithmic process as the previous if-statements.
+      jsonDic[jsonIncrem] = (streetDic)
+      jsonIncrem += 1
+
+      cityDic["City"] = city
+      jsonDic[jsonIncrem] = (cityDic)
+      jsonIncrem += 1
+
+      stateDic["State"] = state
+      jsonDic[jsonIncrem] = (stateDic)
+      jsonIncrem += 1
+
+      zipCodeDic["Zip Code"] = zipCode
+      jsonDic[jsonIncrem] = (zipCodeDic)
+      jsonIncrem += 1
+
+    if firstIncrem == 10: # Obtains the Inspection Type.
+      jsonIncrem += 1
+      inspecType = firstGetter(information, firstIncrem)
+	  jsonDic[jsonIncrem] = (inspecType)
+
+	for link in soup.findAll('td', {'class':'center bold'}):
+		gradeDic = {}
+		secondIncrem += 1
+		
+		if secondIncrem == 2:
+		jsonIncrem += 1
+		inspecGrade = link.string
+
+		gradeDic["Inspection Grade"] = inspecGrade[0]		# The only difference is that the literally string for the grade is 'A\xa0'.
+		jsonDic[jsonIncrem] = (gradeDic)			          # As a result, since we only desire the letter grade, only the first element of 
+                                                    # gradeDic will be stored.
+    print('Gathered Data:')
+    for item in jsonDic:           # Prints a clean list of information.
+      print(jsonDic[item])
+      
+    writeToJSON(jsonDic)
+
+
+def firstGetter(info, increm): # firstGetter's task is to..
+  if increm == 1:
+    tempDic = {}      	# ..Create a temporary dictionary..
+    facilityName = info # ..Store the required info in a respective variable..
+
+    tempDic["Facility Name"] = facilityName	# ..Create a dictionary value of that variable..
+    return tempDic			# ..And return it to parse()
+
+  elif increm == 3:	# Obtains the inspection date.
+    tempDic = {}  
+    inspecDate = info
+
+    tempDic["Inspection Date"] = inspecDate
+    return tempDic
+
+  elif increm == 5:	      # Case five takes the single string that contains the street address, city, state and zip code. Thus, we need to break up the string.
+    badAddress = info	    # 1. Obtains original string of address, city, state and zip.
+
+    streetAddress, temp_cityStateZip = badAddress.split(" \r\n")	    # 2. Begins seperation of values from the string "badAddress." badAddress' literal string value
+	# streetAddress now equals '1313 MAIN ST'.			                    # is '1313 MAIN ST \r\nNAPA CA 94559.', so partition starts at ' \r\n'. Here, the requested street
+	# temp_cityStateZip now equals 'NAPA, CA 94559'. 		                # address is stored along with the next string (temp_cityStateZip) we will use to partition. 
+				
+    city, temp_stateZip = temp_cityStateZip.split(", ")		  # 3. Repeat step 2, but now begins partition at the comma in temp_CityStateZip.
+	# city now equals 'NAPA'.
+	# temp_stateZip now equals 'CA 94559'
+	
+    state = temp_stateZip[:2]     # 4. At this point, the beginning of this string will always have the state's 
+				                          # two abbreviating letters in positions [0] and [1]. So those two strings are stored in 'state'.
+								  
+    zipCode = temp_stateZip[3:]   # 5. The remainder of the string can be stored in zipCode, but start at [3:] instead of [2:] 
+				                          # because 'temp_stateZip' is equal to ' 94559' and the first whitepspace is not desired. 
+								  
+    tempContainer = [streetAddress, city, state, zipCode]	# 6. Finally, store the results in   
+    return tempContainer					# a list and return them to line 39.
+
+  elif increm == 10: # Obtains the Inspection Type
+    tempDic = {}  
+    inspecType = info
+    tempDic["Inspection Type"] = inspecType
+    return tempDic
+	
+def writeToJSON(data):	# Simple method to write information (represented here in the 'data' variable) to a JSON file. 
+  file = open(r"Your Directory Here", "w", encoding="UTF=8")
+  json.dump(data, file, ensure_ascii=True)
+  file.close()
